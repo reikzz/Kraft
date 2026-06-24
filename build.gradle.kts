@@ -8,6 +8,7 @@ version = "0.2.0-SNAPSHOT"
 
 application {
     mainClass.set("org.kraft.client.DesktopLauncherKt")
+    applicationName = "Kraft"
 }
 
 distributions {
