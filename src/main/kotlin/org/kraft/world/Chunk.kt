@@ -22,4 +22,12 @@ class Chunk(val chunkX: Int, val chunkZ: Int) {
         if (x !in 0 until WIDTH || y !in 0 until HEIGHT || z !in 0 until DEPTH) return
         blocks[getIndex(x, y, z)] = type.id
     }
+
+    fun getBlocksData(): ByteArray {
+        return blocks.copyOf()
+    }
+
+    fun setBlocksData(data: ByteArray) {
+        System.arraycopy(data, 0, blocks, 0, blocks.size.coerceAtMost(data.size))
+    }
 }

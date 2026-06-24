@@ -10,6 +10,16 @@ application {
     mainClass.set("org.kraft.client.DesktopLauncherKt")
 }
 
+distributions {
+    main {
+        contents {
+            from("assets") {
+                into("assets")
+            }
+        }
+    }
+}
+
 repositories {
     mavenCentral()
 }
