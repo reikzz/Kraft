@@ -2,8 +2,8 @@ package org.kraft.client.player
 
 import com.badlogic.gdx.graphics.PerspectiveCamera
 import com.badlogic.gdx.math.Vector3
-import org.kraft.input.GameAction
-import org.kraft.input.InputService
+import org.kraft.client.input.GameAction
+import org.kraft.client.input.InputService
 import org.kraft.math.VoxelRaycaster
 import org.kraft.world.BlockType
 import org.kraft.world.VoxelWorld
@@ -30,12 +30,20 @@ class PlayerController(
     private val tmp = Vector3()
     private val degreesPerPixel = 0.3f
     private var skipFrames = 3
+    private var bobbingPhase = 0f
+    private val bobbingAmount = 0.08f
 
     /**
      * Voxel intersection hit result under the screen crosshair. Null if out of range.
      */
     var targetBlock: VoxelRaycaster.Result? = null
         private set
+        
+    var miningProgress: Float = 0f
+        private set
+    private var miningTargetX: Int = -1
+    private var miningTargetY: Int = -1
+    private var miningTargetZ: Int = -1
 
     /**
      * Active inventory hotbar slot index (0 to 8).
@@ -95,9 +103,10 @@ class PlayerController(
             movementDir.nor()
         }
 
-        player.moveInput.set(movementDir.scl(movementSpeed))
+        val speed = if (inputService.isActionPressed(GameAction.SPRINT)) movementSpeed * 1.5f else movementSpeed
+        player.moveInput.set(movementDir.scl(speed))
 
-        if (inputService.isActionJustPressed(GameAction.JUMP)) {
+        if (inputService.isActionPressed(GameAction.JUMP)) {
             player.jump()
         }
 
@@ -107,13 +116,29 @@ class PlayerController(
                 break
             }
         }
+
+        // Scroll wheel slot selection (scroll up = previous slot, scroll down = next slot)
+        val scroll = inputService.scrollDelta
+        if (scroll != 0) {
+            selectedSlot = Math.floorMod(selectedSlot + scroll, hotbar.size)
+            inputService.consumeScroll()
+        }
     }
 
     /**
      * Positions camera at player eye height, updates camera projection matrices, and executes block placements/destructions.
      */
     fun updateCameraAndInteraction() {
-        camera.position.set(player.position.x, player.position.y + player.eyeHeight, player.position.z)
+        val horizontalSpeed = kotlin.math.sqrt(player.velocity.x * player.velocity.x + player.velocity.z * player.velocity.z)
+        if (player.isGrounded && horizontalSpeed > 0.1f) {
+            bobbingPhase += horizontalSpeed * 2.5f * com.badlogic.gdx.Gdx.graphics.deltaTime
+        } else {
+            // Smoothly return to 0
+            bobbingPhase += (0f - bobbingPhase) * 10f * com.badlogic.gdx.Gdx.graphics.deltaTime
+        }
+        val bobOffset = kotlin.math.sin(bobbingPhase) * bobbingAmount
+        
+        camera.position.set(player.position.x, player.position.y + player.eyeHeight + bobOffset, player.position.z)
         camera.update()
 
         targetBlock = if (inputService.isCursorCatched) {
@@ -126,16 +151,41 @@ class PlayerController(
     }
 
     private fun handleInteraction() {
-        if (!inputService.isCursorCatched) return
-        val target = targetBlock ?: return
+        if (!inputService.isCursorCatched) {
+            miningProgress = 0f
+            return
+        }
+        val target = targetBlock
+        if (target == null) {
+            miningProgress = 0f
+            return
+        }
 
-        if (inputService.isActionJustPressed(GameAction.DESTROY_BLOCK)) {
-            onBlockInteracted(target.hitX, target.hitY, target.hitZ, BlockType.AIR)
-        } else if (inputService.isActionJustPressed(GameAction.PLACE_BLOCK)) {
-            val blockToPlace = hotbar[selectedSlot]
-            if (blockToPlace != BlockType.AIR) {
-                if (!player.intersects(target.placeX, target.placeY, target.placeZ)) {
-                    onBlockInteracted(target.placeX, target.placeY, target.placeZ, blockToPlace)
+        if (inputService.isActionPressed(GameAction.DESTROY_BLOCK)) {
+            if (target.hitX != miningTargetX || target.hitY != miningTargetY || target.hitZ != miningTargetZ) {
+                miningTargetX = target.hitX
+                miningTargetY = target.hitY
+                miningTargetZ = target.hitZ
+                miningProgress = 0f
+            }
+            val targetBlockType = world.getBlockAt(miningTargetX, miningTargetY, miningTargetZ)
+            if (targetBlockType != BlockType.AIR) {
+                miningProgress += com.badlogic.gdx.Gdx.graphics.deltaTime / targetBlockType.hardness
+                if (miningProgress >= 1f) {
+                    onBlockInteracted(miningTargetX, miningTargetY, miningTargetZ, BlockType.AIR)
+                    miningProgress = 0f
+                }
+            } else {
+                miningProgress = 0f
+            }
+        } else {
+            miningProgress = 0f
+            if (inputService.isActionJustPressed(GameAction.PLACE_BLOCK)) {
+                val blockToPlace = hotbar[selectedSlot]
+                if (blockToPlace != BlockType.AIR) {
+                    if (!player.intersects(target.placeX, target.placeY, target.placeZ)) {
+                        onBlockInteracted(target.placeX, target.placeY, target.placeZ, blockToPlace)
+                    }
                 }
             }
         }

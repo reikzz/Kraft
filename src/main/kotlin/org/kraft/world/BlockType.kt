@@ -10,7 +10,8 @@ class BlockType private constructor(
     val id: Byte,
     val isSolid: Boolean,
     val textureName: String,
-    val name: String
+    val name: String,
+    val hardness: Float = 1.0f
 ) {
     val isAir: Boolean
         get() = id == 0.toByte()
@@ -27,10 +28,10 @@ class BlockType private constructor(
 
     companion object {
         // Core block types mapped as static companion properties for backward compatibility
-        val AIR = BlockType(0, false, "", "AIR")
-        val STONE = BlockType(1, true, "stone.png", "STONE")
-        val DIRT = BlockType(2, true, "dirt.png", "DIRT")
-        val GRASS = BlockType(3, true, "grass.png", "GRASS")
+        val AIR = BlockType(0, false, "", "AIR", 0.0f)
+        val STONE = BlockType(1, true, "stone.png", "STONE", 1.5f)
+        val DIRT = BlockType(2, true, "dirt.png", "DIRT", 0.5f)
+        val GRASS = BlockType(3, true, "grass.png", "GRASS", 0.6f)
 
         private val registry = mutableMapOf<Byte, BlockType>()
 

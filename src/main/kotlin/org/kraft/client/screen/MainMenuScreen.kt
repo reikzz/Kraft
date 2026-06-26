@@ -10,7 +10,6 @@ import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.g2d.BitmapFont
 import com.badlogic.gdx.graphics.g2d.NinePatch
 import com.badlogic.gdx.math.MathUtils
-import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.scenes.scene2d.InputEvent
 import com.badlogic.gdx.scenes.scene2d.Stage
 import com.badlogic.gdx.scenes.scene2d.ui.*
@@ -22,8 +21,8 @@ import com.badlogic.gdx.utils.viewport.ScreenViewport
 import org.kraft.client.KraftGame
 import org.kraft.client.player.Player
 import org.kraft.client.player.PlayerController
-import org.kraft.input.GdxInputService
-import org.kraft.rendering.WorldRenderer
+import org.kraft.client.input.GdxInputService
+import org.kraft.client.rendering.WorldRenderer
 import org.kraft.server.GameServer
 import org.kraft.world.World
 import org.kraft.world.generator.NoiseTerrainGenerator

@@ -1,4 +1,4 @@
-package org.kraft.input
+package org.kraft.client.input
 
 /**
  * Service abstracting keyboard and mouse inputs into game actions.
@@ -28,4 +28,15 @@ interface InputService {
      * Mouse delta Y movement since the last frame.
      */
     val mouseDeltaY: Float
+
+    /**
+     * Scroll wheel delta accumulated since the last [consumeScroll] call.
+     * Positive = scroll up, negative = scroll down.
+     */
+    val scrollDelta: Int
+
+    /**
+     * Resets the accumulated [scrollDelta] to zero. Call once per frame after reading.
+     */
+    fun consumeScroll()
 }

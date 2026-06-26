@@ -9,8 +9,6 @@ import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.g2d.BitmapFont
 import com.badlogic.gdx.graphics.g2d.NinePatch
-import com.badlogic.gdx.math.MathUtils
-import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.scenes.scene2d.InputEvent
 import com.badlogic.gdx.scenes.scene2d.Stage
 import com.badlogic.gdx.scenes.scene2d.ui.Label
@@ -21,43 +19,19 @@ import com.badlogic.gdx.scenes.scene2d.ui.TextButton
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton.TextButtonStyle
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
 import com.badlogic.gdx.utils.viewport.ScreenViewport
+import com.badlogic.gdx.InputMultiplexer
+import org.kraft.client.GameSession
 import org.kraft.client.KraftGame
-import org.kraft.client.player.Player
-import org.kraft.client.player.RemotePlayer
-import org.kraft.client.player.PlayerController
-import org.kraft.input.GameAction
-import org.kraft.input.GdxInputService
-import org.kraft.input.InputService
-import org.kraft.network.*
-import org.kraft.physics.VoxelPhysicsEngine
-import org.kraft.rendering.WorldRenderer
-import org.kraft.world.VoxelWorld
-import org.kraft.world.World
-import org.kraft.world.BlockType
-import org.kraft.world.generator.NoiseTerrainGenerator
+import org.kraft.client.input.GameAction
+import org.kraft.client.input.GdxInputService
+import org.kraft.client.rendering.WorldRenderer
 
-/**
- * Game screen handling the active gameplay loop, physics simulation, chunk loading, and frame rendering.
- * Supports both singleplayer mode and TCP multiplayer client mode.
- * Displays a custom pause menu when the cursor is freed via ESC.
- */
 class GameplayScreen(private val game: KraftGame, private val serverHost: String? = null) : Screen {
     private lateinit var camera: PerspectiveCamera
-    private lateinit var world: VoxelWorld
+    private lateinit var session: GameSession
     private lateinit var worldRenderer: WorldRenderer
-    private lateinit var player: Player
-    private lateinit var playerController: PlayerController
-    private lateinit var inputService: InputService
-    private lateinit var physicsEngine: VoxelPhysicsEngine
+    private lateinit var inputService: GdxInputService
 
-    private var networkClient: NetworkClient? = null
-    private var localPlayerId = -1
-    private val remotePlayers = mutableMapOf<Int, RemotePlayer>()
-    private var lastSendTime = 0f
-
-    private val chunkLoadRadius = 2
-
-    // In-game Pause Menu UI
     private lateinit var stage: Stage
     private lateinit var skin: Skin
 
@@ -68,41 +42,30 @@ class GameplayScreen(private val game: KraftGame, private val serverHost: String
         camera.update()
 
         inputService = GdxInputService()
-        inputService.isCursorCatched = true
 
-        if (serverHost != null) {
-            val client = NetworkClient(serverHost)
-            networkClient = client
-            world = World(terrainGenerator = null)
-            player = Player()
-            
-            try {
-                client.start()
-            } catch (e: Exception) {
-                println("Failed to connect to server: ${e.message}")
-                game.setScreen(MainMenuScreen(game, "Failed to connect: ${e.message}"))
-                return
-            }
+        session = GameSession(serverHost, inputService, camera)
 
-            playerController = PlayerController(player, world, camera, inputService, onBlockInteracted = { x, y, z, type ->
-                client.sendPacket(BlockChangePacket(x, y, z, type.id))
-            })
-        } else {
-            world = World(NoiseTerrainGenerator())
-            player = Player()
-            playerController = PlayerController(player, world, camera, inputService)
+        try {
+            session.connect()
+        } catch (e: Exception) {
+            session.dispose()
+            game.setScreen(MainMenuScreen(game, "Failed to connect: ${e.message}"))
+            return
         }
 
-        worldRenderer = WorldRenderer(world)
-        physicsEngine = VoxelPhysicsEngine(world)
+        worldRenderer = WorldRenderer(session.world)
 
-        // Set up Pause Menu
+        val multiplexer = InputMultiplexer(inputService)
+        Gdx.input.inputProcessor = multiplexer
+
+        inputService.isCursorCatched = true
+
         setupPauseMenu()
     }
 
     private fun setupPauseMenu() {
         stage = Stage(ScreenViewport())
-        
+
         skin = Skin()
         val pixmap = Pixmap(1, 1, Pixmap.Format.RGBA8888).apply {
             setColor(Color.WHITE)
@@ -111,7 +74,6 @@ class GameplayScreen(private val game: KraftGame, private val serverHost: String
         skin.add("white", Texture(pixmap))
         pixmap.dispose()
 
-        // Crisp pixel-perfect font setup
         val font = BitmapFont()
         for (i in 0 until font.regions.size) {
             font.regions.get(i).texture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest)
@@ -126,9 +88,8 @@ class GameplayScreen(private val game: KraftGame, private val serverHost: String
         titleFont.data.setScale(2.0f)
         skin.add("title", titleFont)
 
-        // NinePatch background panel (2px cyan border)
         val borderPixmap = Pixmap(12, 12, Pixmap.Format.RGBA8888).apply {
-            setColor(Color(0.04f, 0.04f, 0.06f, 0.85f)) // Slightly higher opacity for in-game overlay
+            setColor(Color(0.04f, 0.04f, 0.06f, 0.85f))
             fill()
             setColor(Color(0f, 0.8f, 0.8f, 0.9f))
             drawRectangle(0, 0, 12, 12)
@@ -138,7 +99,6 @@ class GameplayScreen(private val game: KraftGame, private val serverHost: String
         borderPixmap.dispose()
         skin.add("card_bg", NinePatch(borderTexture, 3, 3, 3, 3))
 
-        // Custom Buttons (grey border -> cyan on hover)
         val btnPixmap = Pixmap(12, 12, Pixmap.Format.RGBA8888).apply {
             setColor(Color(0.08f, 0.08f, 0.1f, 0.9f))
             fill()
@@ -185,32 +145,24 @@ class GameplayScreen(private val game: KraftGame, private val serverHost: String
         val titleStyle = LabelStyle(titleFont, Color(0f, 0.8f, 0.8f, 1f))
         skin.add("title", titleStyle)
 
-        // Build the layout
-        val rootTable = Table().apply {
-            setFillParent(true)
-        }
+        val rootTable = Table().apply { setFillParent(true) }
         val cardTable = Table().apply {
             background = this@GameplayScreen.skin.getDrawable("card_bg")
             pad(35f)
         }
 
-        val titleLabel = Label("GAME PAUSED", skin, "title")
-        cardTable.add(titleLabel).padBottom(25f).row()
+        cardTable.add(Label("GAME PAUSED", skin, "title")).padBottom(25f).row()
 
         val btnResume = TextButton("Resume Game", skin).apply {
             addListener(object : ClickListener() {
-                override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                    resumeGame()
-                }
+                override fun clicked(event: InputEvent?, x: Float, y: Float) { resumeGame() }
             })
         }
         cardTable.add(btnResume).size(240f, 40f).padBottom(12f).row()
 
         val btnQuit = TextButton("Save and Quit", skin).apply {
             addListener(object : ClickListener() {
-                override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                    quitToTitle()
-                }
+                override fun clicked(event: InputEvent?, x: Float, y: Float) { quitToTitle() }
             })
         }
         cardTable.add(btnQuit).size(240f, 40f).row()
@@ -219,111 +171,49 @@ class GameplayScreen(private val game: KraftGame, private val serverHost: String
         stage.addActor(rootTable)
     }
 
+    private val isPaused: Boolean get() = !inputService.isCursorCatched
+
     private fun pauseGame() {
         inputService.isCursorCatched = false
-        Gdx.input.inputProcessor = stage
+
+        (Gdx.input.inputProcessor as? InputMultiplexer)?.let { mux ->
+            if (!mux.processors.contains(stage)) mux.addProcessor(0, stage)
+        }
     }
 
     private fun resumeGame() {
         inputService.isCursorCatched = true
-        Gdx.input.inputProcessor = null
+        (Gdx.input.inputProcessor as? InputMultiplexer)?.removeProcessor(stage)
     }
 
     private fun quitToTitle() {
-        networkClient?.stop()
+        session.dispose()
         game.setScreen(MainMenuScreen(game))
     }
 
     override fun render(delta: Float) {
-        networkClient?.let { client ->
-            if (!client.running) {
-                game.setScreen(MainMenuScreen(game, "Disconnected from server."))
-                return
-            }
-            while (client.packetQueue.isNotEmpty()) {
-                val packet = client.packetQueue.poll()
-                handleServerPacket(packet)
-            }
+        if (!session.processNetworkPackets()) {
+            game.setScreen(MainMenuScreen(game, "Disconnected from server."))
+            return
         }
 
-        // Toggle pause menu using ESC
         if (inputService.isActionJustPressed(GameAction.TOGGLE_CURSOR)) {
-            if (inputService.isCursorCatched) {
-                pauseGame()
-            } else {
-                resumeGame()
-            }
+            if (isPaused) resumeGame() else pauseGame()
         }
 
-        val isPaused = !inputService.isCursorCatched
-
-        // Only update local simulation states if not paused
         if (!isPaused) {
-            playerController.updateInput(delta)
-            physicsEngine.update(player, player.moveInput, delta)
-            playerController.updateCameraAndInteraction()
-            
-            // Replicate player positions at 20Hz if online
-            networkClient?.let { client ->
-                if (localPlayerId != -1) {
-                    lastSendTime += delta
-                    if (lastSendTime >= 0.05f) {
-                        val yaw = MathUtils.atan2(camera.direction.z, camera.direction.x) * MathUtils.radiansToDegrees
-                        client.sendPacket(PlayerPositionPacket(localPlayerId, player.position.x, player.position.y, player.position.z, yaw))
-                        lastSendTime = 0f
-                    }
-                }
-            }
-
-            if (serverHost == null) {
-                world.loadChunksAround(player.x, player.z, chunkLoadRadius, maxLoadsPerFrame = 1)
-            }
+            session.update(delta)
         } else {
-            // Apply physics/gravity even when paused (stops player movement input, keeps world drop simulation running)
-            physicsEngine.update(player, player.moveInput.setZero(), delta)
+            session.updatePaused(delta)
         }
 
-        // Render 3D World (Still drawn in background when paused)
         Gdx.gl.glClearColor(0.5f, 0.7f, 1.0f, 1.0f)
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
-        worldRenderer.render(camera, player, playerController, remotePlayers.values)
+        worldRenderer.render(camera, session.player, session.playerController, session.remotePlayers.values)
 
-        // Draw 2D Pause UI Overlay
         if (isPaused) {
             stage.act(delta)
             stage.draw()
-        }
-    }
-
-    private fun handleServerPacket(packet: Packet) {
-        when (packet) {
-            is HandshakePacket -> {
-                localPlayerId = packet.playerId
-                player.position.set(packet.x, packet.y, packet.z)
-                println("Joined server as player $localPlayerId at (${packet.x}, ${packet.y}, ${packet.z})")
-            }
-            is SpawnPlayerPacket -> {
-                remotePlayers[packet.playerId] = RemotePlayer(packet.playerId).apply {
-                    position.set(packet.x, packet.y, packet.z)
-                }
-                println("Player ${packet.playerId} joined.")
-            }
-            is DestroyPlayerPacket -> {
-                remotePlayers.remove(packet.playerId)
-                println("Player ${packet.playerId} left.")
-            }
-            is PlayerPositionPacket -> {
-                remotePlayers[packet.playerId]?.let { remote ->
-                    remote.position.set(packet.x, packet.y, packet.z)
-                    remote.yaw = packet.yaw
-                }
-            }
-            is BlockChangePacket -> {
-                world.setBlockAt(packet.x, packet.y, packet.z, BlockType.fromId(packet.typeId))
-            }
-            is ChunkDataPacket -> {
-                (world as? World)?.handleChunkData(packet.chunkX, packet.chunkZ, packet.blocks)
-            }
         }
     }
 
@@ -335,7 +225,6 @@ class GameplayScreen(private val game: KraftGame, private val serverHost: String
     }
 
     override fun pause() {}
-
     override fun resume() {}
 
     override fun hide() {
@@ -343,7 +232,7 @@ class GameplayScreen(private val game: KraftGame, private val serverHost: String
     }
 
     override fun dispose() {
-        networkClient?.stop()
+        session.dispose()
         worldRenderer.dispose()
         stage.dispose()
         skin.dispose()

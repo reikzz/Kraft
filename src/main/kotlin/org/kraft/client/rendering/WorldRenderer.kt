@@ -1,4 +1,4 @@
-package org.kraft.rendering
+package org.kraft.client.rendering
 
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.Color
@@ -18,19 +18,23 @@ import org.kraft.client.player.RemotePlayer
 import org.kraft.world.Chunk
 import org.kraft.world.ChunkCoordinate
 import org.kraft.world.VoxelWorld
-import org.kraft.event.BlockChangedEvent
-import org.kraft.event.ChunkLoadedEvent
-import org.kraft.event.EventBus
+import org.kraft.world.subscribe
+import org.kraft.event.ChunkUnloadedEvent
 import org.kraft.event.Subscription
-import org.kraft.world.BlockType
 import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder
 import com.badlogic.gdx.graphics.g3d.Material
 import com.badlogic.gdx.graphics.VertexAttributes.Usage
+import org.kraft.event.BlockChangedEvent
 
 /**
  * Handles the rendering of the 3D voxel world, targeted block highlights, and hud.
- * Subscribes to world update events from [EventBus] to rebuild chunk meshes dynamically.
+ *
+ * Chunk mesh rebuilding is batched per-frame using [Chunk.isDirty] flags rather than
+ * being triggered synchronously inside event callbacks. This prevents frame hitches when
+ * many blocks change in one tick (e.g. structure generation, explosions).
+ *
+ * At most [MAX_REBUILDS_PER_FRAME] chunks are rebuilt per frame to spread the cost.
  */
 class WorldRenderer(
     private val world: VoxelWorld,
@@ -49,6 +53,11 @@ class WorldRenderer(
 
     private val playerModel: Model
     private val playerInstance: ModelInstance
+
+    companion object {
+        /** Maximum chunk meshes rebuilt per render frame to avoid frame-time spikes. */
+        private const val MAX_REBUILDS_PER_FRAME = 4
+    }
 
     init {
         val modelBuilder = ModelBuilder()
@@ -106,30 +115,44 @@ class WorldRenderer(
         playerModel = modelBuilder.end()
         playerInstance = ModelInstance(playerModel)
 
-        subscriptions.add(world.eventBus.subscribe<BlockChangedEvent> { event ->
+        // When a block changes, mark that chunk and its four horizontal neighbours dirty
+        // so border faces between chunks are re-evaluated (face culling at chunk seams).
+        subscriptions.add(world.subscribe<BlockChangedEvent> { event ->
             val chunkX = Math.floorDiv(event.x, Chunk.WIDTH)
             val chunkZ = Math.floorDiv(event.z, Chunk.DEPTH)
-            rebuildChunkWithNeighbors(ChunkCoordinate(chunkX, chunkZ))
+            val coord = ChunkCoordinate(chunkX, chunkZ)
+            world.getChunk(coord)?.isDirty = true
+            markNeighboursDirty(coord)
         })
 
-        subscriptions.add(world.eventBus.subscribe<ChunkLoadedEvent> { event ->
-            rebuildChunkWithNeighbors(ChunkCoordinate(event.chunkX, event.chunkZ))
+        // When a chunk is unloaded, drop its rendered mesh and mark neighbours dirty.
+        subscriptions.add(world.subscribe<ChunkUnloadedEvent> { event ->
+            val coordinate = ChunkCoordinate(event.chunkX, event.chunkZ)
+            renderedChunks.remove(coordinate)?.dispose()
+            // Mark neighbours dirty so their border faces are re-evaluated.
+            markNeighboursDirty(coordinate)
         })
 
+        // Build initial meshes for any already-loaded chunks (shouldn't be any on first
+        // construction, but handles hot-reload scenarios gracefully).
         world.loadedChunks.forEach { chunk ->
             buildChunkMesh(ChunkCoordinate(chunk.chunkX, chunk.chunkZ))
         }
     }
 
-    private fun rebuildChunkWithNeighbors(coordinate: ChunkCoordinate) {
-        val targets = listOf(
-            coordinate,
+    /**
+     * Marks the four horizontal neighbours of [coordinate] as dirty so their border faces
+     * are rebuilt on the next frame (needed when a chunk appears or disappears).
+     */
+    private fun markNeighboursDirty(coordinate: ChunkCoordinate) {
+        listOf(
             ChunkCoordinate(coordinate.x + 1, coordinate.z),
             ChunkCoordinate(coordinate.x - 1, coordinate.z),
             ChunkCoordinate(coordinate.x, coordinate.z + 1),
             ChunkCoordinate(coordinate.x, coordinate.z - 1)
-        )
-        targets.forEach { buildChunkMesh(it) }
+        ).forEach { neighbour ->
+            world.getChunk(neighbour)?.isDirty = true
+        }
     }
 
     private fun buildChunkMesh(coordinate: ChunkCoordinate) {
@@ -137,6 +160,22 @@ class WorldRenderer(
         renderedChunks.remove(coordinate)?.dispose()
         val model = chunkMeshBuilder.build(chunk)
         renderedChunks[coordinate] = RenderedChunk(model, ModelInstance(model))
+        chunk.isDirty = false
+    }
+
+    /**
+     * Rebuilds up to [MAX_REBUILDS_PER_FRAME] dirty chunk meshes each frame, spreading
+     * the cost across multiple frames instead of spiking on a single one.
+     */
+    private fun rebuildDirtyChunks() {
+        var rebuilt = 0
+        for (chunk in world.loadedChunks) {
+            if (rebuilt >= MAX_REBUILDS_PER_FRAME) break
+            if (chunk.isDirty) {
+                buildChunkMesh(ChunkCoordinate(chunk.chunkX, chunk.chunkZ))
+                rebuilt++
+            }
+        }
     }
 
     /**
@@ -148,9 +187,21 @@ class WorldRenderer(
         controller: PlayerController,
         remotePlayers: Collection<RemotePlayer> = emptyList()
     ) {
+        rebuildDirtyChunks()
+
         modelBatch.begin(camera)
-        renderedChunks.values.forEach { renderedChunk ->
-            modelBatch.render(renderedChunk.instance, environment)
+        renderedChunks.forEach { (coord, renderedChunk) ->
+            val centerX = coord.x * Chunk.WIDTH + (Chunk.WIDTH / 2f)
+            val centerY = Chunk.HEIGHT / 2f
+            val centerZ = coord.z * Chunk.DEPTH + (Chunk.DEPTH / 2f)
+            
+            val halfWidth = Chunk.WIDTH / 2f
+            val halfHeight = Chunk.HEIGHT / 2f
+            val halfDepth = Chunk.DEPTH / 2f
+            
+            if (camera.frustum.boundsInFrustum(centerX, centerY, centerZ, halfWidth, halfHeight, halfDepth)) {
+                modelBatch.render(renderedChunk.instance, environment)
+            }
         }
         remotePlayers.forEach { remotePlayer ->
             playerInstance.transform.setToTranslation(
@@ -166,8 +217,9 @@ class WorldRenderer(
         if (targetBlock != null) {
             shapeRenderer.projectionMatrix = camera.combined
             shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
-            shapeRenderer.color = Color.BLACK
             
+            // Draw normal outline
+            shapeRenderer.color = Color.BLACK
             val offset = 0.005f
             val outlineSize = 1f + 2f * offset
             shapeRenderer.box(
@@ -178,6 +230,21 @@ class WorldRenderer(
                 outlineSize,
                 outlineSize
             )
+            
+            // Draw mining progress box
+            if (controller.miningProgress > 0f) {
+                shapeRenderer.color = Color.RED
+                val progressSize = controller.miningProgress * 1.05f
+                val pOffset = (1f - progressSize) / 2f
+                shapeRenderer.box(
+                    targetBlock.hitX.toFloat() + pOffset,
+                    targetBlock.hitY.toFloat() + pOffset,
+                    targetBlock.hitZ.toFloat() + 1f - pOffset,
+                    progressSize,
+                    progressSize,
+                    progressSize
+                )
+            }
             shapeRenderer.end()
         }
 

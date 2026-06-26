@@ -1,18 +1,24 @@
-package org.kraft.input
+package org.kraft.client.input
 
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.Input
+import com.badlogic.gdx.InputAdapter
 
 /**
  * LibGDX implementation of the InputService.
+ *
+ * Extends [InputAdapter] to capture scroll-wheel events, which LibGDX only exposes
+ * through the [InputProcessor] callback API (not via polling).
+ * Register this as an input processor via [InputMultiplexer] in the screen.
  */
-class GdxInputService : InputService {
+class GdxInputService : InputAdapter(), InputService {
     private val keyBindings = mapOf(
         GameAction.MOVE_FORWARD to Input.Keys.W,
         GameAction.MOVE_BACKWARD to Input.Keys.S,
         GameAction.MOVE_LEFT to Input.Keys.A,
         GameAction.MOVE_RIGHT to Input.Keys.D,
         GameAction.JUMP to Input.Keys.SPACE,
+        GameAction.SPRINT to Input.Keys.SHIFT_LEFT,
         GameAction.TOGGLE_CURSOR to Input.Keys.ESCAPE,
         GameAction.SELECT_SLOT_1 to Input.Keys.NUM_1,
         GameAction.SELECT_SLOT_2 to Input.Keys.NUM_2,
@@ -29,6 +35,8 @@ class GdxInputService : InputService {
         GameAction.DESTROY_BLOCK to Input.Buttons.LEFT,
         GameAction.PLACE_BLOCK to Input.Buttons.RIGHT
     )
+
+    private var _scrollDelta = 0
 
     override fun isActionPressed(action: GameAction): Boolean {
         keyBindings[action]?.let { return Gdx.input.isKeyPressed(it) }
@@ -53,4 +61,17 @@ class GdxInputService : InputService {
 
     override val mouseDeltaY: Float
         get() = Gdx.input.deltaY.toFloat()
+
+    override val scrollDelta: Int
+        get() = _scrollDelta
+
+    override fun consumeScroll() {
+        _scrollDelta = 0
+    }
+
+    /** Called by LibGDX when the scroll wheel moves. */
+    override fun scrolled(amountX: Float, amountY: Float): Boolean {
+        _scrollDelta += amountY.toInt()
+        return false // allow other processors to also handle it
+    }
 }

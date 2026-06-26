@@ -5,7 +5,10 @@ import org.kraft.world.World
 import org.kraft.world.Chunk
 import org.kraft.world.ChunkCoordinate
 import org.kraft.world.BlockType
+import org.kraft.world.storage.DiskChunkStorage
 import org.kraft.world.generator.NoiseTerrainGenerator
+import org.kraft.event.BlockChangedEvent
+import org.kraft.world.subscribe
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.net.ServerSocket
@@ -16,15 +19,28 @@ import kotlin.math.floor
 
 /**
  * Dedicated server hosting the voxel world simulation and handling multi-client TCP connections.
+ *
+ * Block-change replication is now driven by the world's [BlockChangedEvent] instead of being
+ * manually broadcast inside each [ClientHandler]. This means any future system that modifies
+ * blocks (physics, redstone, explosions) will automatically replicate to all clients without
+ * additional wiring.
  */
 class GameServer(private val port: Int = 25565) {
-    private val serverWorld = World(NoiseTerrainGenerator())
+    private val serverWorld = World(NoiseTerrainGenerator(), DiskChunkStorage("server"))
     private val clients = ConcurrentHashMap<Int, ClientHandler>()
     private val playerIdGenerator = AtomicInteger(1)
     private var serverSocket: ServerSocket? = null
-    
+
     @Volatile
     private var running = false
+
+    init {
+        // Subscribe to block changes on the world event bus and replicate them to all clients.
+        // This decouples block-change broadcasting from the specific handler that triggered it.
+        serverWorld.subscribe<BlockChangedEvent> { event ->
+            broadcast(BlockChangePacket(event.x, event.y, event.z, event.newType.id))
+        }
+    }
 
     /**
      * Starts the server TCP socket and enters the connection accept loop.
@@ -75,36 +91,31 @@ class GameServer(private val port: Int = 25565) {
         private val inp = DataInputStream(socket.getInputStream())
         private val out = DataOutputStream(socket.getOutputStream())
         private val sentChunks = mutableSetOf<ChunkCoordinate>()
-        
+
         @Volatile
         private var connected = true
 
-        private var posX = 8f
-        private var posY = 15f
-        private var posZ = 8f
-        private var yaw = 0f
+        var posX = 8f
+        var posY = (Chunk.HEIGHT / 2 + 5).toFloat()
+        var posZ = 8f
+        var yaw = 0f
 
         override fun run() {
             try {
                 println("Player $playerId joined from ${socket.remoteSocketAddress}")
 
-                // 1. Handshake (Welcome client, assign ID and spawn position)
                 sendPacket(HandshakePacket(playerId, posX, posY, posZ))
 
-                // 2. Synchronize existing players to this client
                 clients.forEach { (otherId, other) ->
                     if (otherId != playerId) {
                         sendPacket(SpawnPlayerPacket(otherId, other.posX, other.posY, other.posZ))
                     }
                 }
 
-                // 3. Broadcast new player spawn to other clients
                 broadcast(SpawnPlayerPacket(playerId, posX, posY, posZ), excludePlayerId = playerId)
 
-                // 4. Send initial world chunks around player spawn coordinates
                 sendChunksAround(posX, posZ, radius = 2)
 
-                // 5. Packet receive loop
                 while (connected) {
                     val packet = Packet.read(inp)
                     handlePacket(packet)
@@ -124,18 +135,17 @@ class GameServer(private val port: Int = 25565) {
                     posZ = packet.z
                     yaw = packet.yaw
 
-                    // Dynamically load and stream chunks as player moves
+                    // Dynamically load and stream new chunks as the player moves
                     sendChunksAround(posX, posZ, radius = 2)
 
                     // Replicate movement to all other clients
                     broadcast(PlayerPositionPacket(playerId, posX, posY, posZ, yaw), excludePlayerId = playerId)
                 }
                 is BlockChangePacket -> {
+                    // Apply to the world — the BlockChangedEvent subscription (in GameServer.init)
+                    // automatically broadcasts the change to all clients.
                     val blockType = BlockType.fromId(packet.typeId)
                     serverWorld.setBlockAt(packet.x, packet.y, packet.z, blockType)
-
-                    // Enforce block changes (broadcast to all clients including sender)
-                    broadcast(BlockChangePacket(packet.x, packet.y, packet.z, packet.typeId))
                 }
                 else -> {}
             }

@@ -2,10 +2,14 @@ package org.kraft.world
 
 import org.kraft.event.BlockChangedEvent
 import org.kraft.event.ChunkLoadedEvent
+import org.kraft.event.ChunkUnloadedEvent
 import org.kraft.event.EventBus
+import org.kraft.event.Subscription
 import org.kraft.world.generator.TerrainGenerator
 import org.kraft.world.generator.NoiseTerrainGenerator
+import org.kraft.world.storage.ChunkStorage
 import kotlin.math.floor
+import kotlin.reflect.KClass
 
 /**
  * Implementation of [VoxelWorld] handling block storage, updates, and chunk lifecycle.
@@ -13,8 +17,9 @@ import kotlin.math.floor
  */
 class World(
     private val terrainGenerator: TerrainGenerator? = NoiseTerrainGenerator(),
+    private val chunkStorage: ChunkStorage? = null
 ) : VoxelWorld {
-    override val eventBus = EventBus()
+    private val eventBus = EventBus()
     private val chunks = mutableMapOf<ChunkCoordinate, Chunk>()
 
     init {
@@ -26,6 +31,10 @@ class World(
 
     override val loadedChunks: Collection<Chunk>
         get() = chunks.values
+
+    override fun <T : Any> subscribe(eventClass: KClass<T>, handler: (T) -> Unit): Subscription {
+        return eventBus.subscribe(eventClass, handler)
+    }
 
     override fun getChunk(coordinate: ChunkCoordinate): Chunk? {
         return chunks[coordinate]
@@ -39,9 +48,12 @@ class World(
         val loaded = mutableSetOf<ChunkCoordinate>()
         var loads = 0
 
+        val requiredChunks = mutableSetOf<ChunkCoordinate>()
+
         for (chunkX in centerChunkX - radius..centerChunkX + radius) {
             for (chunkZ in centerChunkZ - radius..centerChunkZ + radius) {
                 val coord = ChunkCoordinate(chunkX, chunkZ)
+                requiredChunks.add(coord)
                 if (coord !in chunks) {
                     if (loads < maxLoadsPerFrame) {
                         if (loadChunk(chunkX, chunkZ)) {
@@ -51,6 +63,12 @@ class World(
                     }
                 }
             }
+        }
+
+        // Unload chunks that are out of bounds
+        val chunksToUnload = chunks.keys.filter { it !in requiredChunks }
+        for (coord in chunksToUnload) {
+            unloadChunk(coord.x, coord.z)
         }
 
         return loaded
@@ -106,12 +124,29 @@ class World(
         val coordinate = ChunkCoordinate(chunkX, chunkZ)
         if (coordinate in chunks) return false
 
-        val chunk = Chunk(chunkX, chunkZ)
-        terrainGenerator?.generate(chunk)
+        var chunk: Chunk? = chunkStorage?.loadChunk(chunkX, chunkZ)
+
+        if (chunk == null) {
+            chunk = Chunk(chunkX, chunkZ)
+            terrainGenerator?.generate(chunk)
+        }
         chunks[coordinate] = chunk
 
         eventBus.publish(ChunkLoadedEvent(chunkX, chunkZ))
         return true
+    }
+
+    private fun unloadChunk(chunkX: Int, chunkZ: Int) {
+        val coordinate = ChunkCoordinate(chunkX, chunkZ)
+        val chunk = chunks.remove(coordinate)
+        if (chunk != null) {
+            chunkStorage?.saveChunk(chunk)
+            eventBus.publish(ChunkUnloadedEvent(chunkX, chunkZ))
+        }
+    }
+
+    fun saveAll() {
+        chunkStorage?.saveAll(chunks.values)
     }
 }
 

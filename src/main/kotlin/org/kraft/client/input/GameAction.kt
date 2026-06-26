@@ -1,4 +1,4 @@
-package org.kraft.input
+package org.kraft.client.input
 
 /**
  * Enumeration of abstract game actions mapped to physical inputs.
@@ -9,6 +9,7 @@ enum class GameAction {
     MOVE_LEFT,
     MOVE_RIGHT,
     JUMP,
+    SPRINT,
     DESTROY_BLOCK,
     PLACE_BLOCK,
     TOGGLE_CURSOR,

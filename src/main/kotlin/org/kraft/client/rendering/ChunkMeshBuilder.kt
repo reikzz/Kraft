@@ -1,4 +1,4 @@
-package org.kraft.rendering
+package org.kraft.client.rendering
 
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.GL20

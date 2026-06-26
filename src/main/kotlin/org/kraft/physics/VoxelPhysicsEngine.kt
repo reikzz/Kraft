@@ -23,7 +23,7 @@ class VoxelPhysicsEngine(
             body.velocity.y = 0f
         }
 
-        val accel = if (body.isGrounded) 12f else 3.5f
+        val accel = if (body.isGrounded) 25f else 6f
         body.velocity.x = MathUtils.lerp(body.velocity.x, moveInput.x, accel * deltaTime)
         body.velocity.z = MathUtils.lerp(body.velocity.z, moveInput.z, accel * deltaTime)
 
