@@ -1,16 +1,16 @@
 # Kraft
 
-Kraft is a lightweight 3D voxel game engine built from scratch using **Kotlin** and **LibGDX**. 
+Kraft is a lightweight 3D voxel sandbox built with **Kotlin** and **LibGDX**. 
 
 ---
 
 ## Features
 
 *   **Procedural World**: Generates terrain heights dynamically using 2D Perlin Noise.
-*   **Free Look Camera**: Look around naturally using mouse movement (no button holding required).
-*   **Block Interactions**: Left-click to destroy blocks, right-click to place stone blocks.
-*   **HUD Elements**: Includes a selection outline around the targeted block and a central crosshair.
-*   **Decoupled Physics**: Inputs are handled by a dedicated controller, keeping physics and rendering logic independent.
+*   **Multiplayer Support**: Experimental local/network multiplayer using KryoNet.
+*   **Free Look Camera**: Look around naturally using mouse movement.
+*   **Block Interactions**: Left-click to destroy blocks, right-click to place blocks.
+*   **HUD & Pause Menu**: Features a crosshair, selection outline, and a pause menu.
 
 ---
 
@@ -21,7 +21,7 @@ Kraft is a lightweight 3D voxel game engine built from scratch using **Kotlin** 
 *   `Mouse Move` — Rotate camera
 *   `Left Click` — Destroy block
 *   `Right Click` — Place block (Stone)
-*   `Escape` — Toggle cursor capture
+*   `Escape` — Pause menu (Resume, Quit)
 
 ---
 
@@ -30,5 +30,8 @@ Kraft is a lightweight 3D voxel game engine built from scratch using **Kotlin** 
 Ensure you have **Java 21** installed, then execute:
 
 ```bash
+# Run the client (Local/Singleplayer mode)
 ./gradlew run
 ```
+
+*Note: Dedicated server launch instructions will be added as multiplayer matures.*
