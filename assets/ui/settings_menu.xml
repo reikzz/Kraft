@@ -1,0 +1,7 @@
+<Table fillParent="true" align="center">
+    <Label text="SETTINGS" style="title" pad="20" row="true"/>
+
+    <Label text="Render Distance: 2 chunks" style="default" pad="10" row="true"/>
+
+    <TextButton id="btnBack" text="Back to Menu" width="200" height="40" pad="30" row="true"/>
+</Table>

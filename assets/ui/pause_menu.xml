@@ -1,0 +1,9 @@
+<Table fillParent="true" align="center">
+    <Table background="card_bg" pad="40" align="center">
+        <Label text="GAME PAUSED" style="title" padBottom="30" row="true"/>
+
+        <TextButton id="btnResume" text="Resume Game" width="240" height="45" padBottom="15" row="true"/>
+
+        <TextButton id="btnBack" text="Save and Quit" width="240" height="45" row="true"/>
+    </Table>
+</Table>
