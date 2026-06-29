@@ -18,14 +18,11 @@ import org.kraft.client.player.RemotePlayer
 import org.kraft.world.Chunk
 import org.kraft.world.ChunkCoordinate
 import org.kraft.world.VoxelWorld
-import org.kraft.world.subscribe
-import org.kraft.event.ChunkUnloadedEvent
-import org.kraft.event.Subscription
+import org.kraft.core.event.Subscription
 import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder
 import com.badlogic.gdx.graphics.g3d.Material
 import com.badlogic.gdx.graphics.VertexAttributes.Usage
-import org.kraft.event.BlockChangedEvent
 
 /**
  * Handles the rendering of the 3D voxel world, targeted block highlights, and hud.
@@ -194,11 +191,11 @@ class WorldRenderer(
             val centerX = coord.x * Chunk.WIDTH + (Chunk.WIDTH / 2f)
             val centerY = Chunk.HEIGHT / 2f
             val centerZ = coord.z * Chunk.DEPTH + (Chunk.DEPTH / 2f)
-            
+
             val halfWidth = Chunk.WIDTH / 2f
             val halfHeight = Chunk.HEIGHT / 2f
             val halfDepth = Chunk.DEPTH / 2f
-            
+
             if (camera.frustum.boundsInFrustum(centerX, centerY, centerZ, halfWidth, halfHeight, halfDepth)) {
                 modelBatch.render(renderedChunk.instance, environment)
             }
@@ -217,7 +214,7 @@ class WorldRenderer(
         if (targetBlock != null) {
             shapeRenderer.projectionMatrix = camera.combined
             shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
-            
+
             // Draw normal outline
             shapeRenderer.color = Color.BLACK
             val offset = 0.005f
@@ -230,7 +227,7 @@ class WorldRenderer(
                 outlineSize,
                 outlineSize
             )
-            
+
             // Draw mining progress box
             if (controller.miningProgress > 0f) {
                 shapeRenderer.color = Color.RED

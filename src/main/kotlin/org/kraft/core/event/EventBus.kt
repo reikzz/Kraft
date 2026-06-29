@@ -1,4 +1,4 @@
-package org.kraft.event
+package org.kraft.core.event
 
 import kotlin.reflect.KClass
 

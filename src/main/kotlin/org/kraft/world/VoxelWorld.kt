@@ -1,6 +1,6 @@
 package org.kraft.world
 
-import org.kraft.event.Subscription
+import org.kraft.core.event.Subscription
 import kotlin.reflect.KClass
 
 /**

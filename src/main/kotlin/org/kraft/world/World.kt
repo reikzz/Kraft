@@ -1,10 +1,10 @@
 package org.kraft.world
 
-import org.kraft.event.BlockChangedEvent
-import org.kraft.event.ChunkLoadedEvent
-import org.kraft.event.ChunkUnloadedEvent
-import org.kraft.event.EventBus
-import org.kraft.event.Subscription
+import org.kraft.core.event.BlockChangedEvent
+import org.kraft.core.event.ChunkLoadedEvent
+import org.kraft.core.event.ChunkUnloadedEvent
+import org.kraft.core.event.EventBus
+import org.kraft.core.event.Subscription
 import org.kraft.world.generator.TerrainGenerator
 import org.kraft.world.generator.NoiseTerrainGenerator
 import org.kraft.world.storage.ChunkStorage

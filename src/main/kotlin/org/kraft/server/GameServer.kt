@@ -1,13 +1,13 @@
 package org.kraft.server
 
 import org.kraft.network.*
+import org.kraft.world.BlockChangedEvent
 import org.kraft.world.World
 import org.kraft.world.Chunk
 import org.kraft.world.ChunkCoordinate
 import org.kraft.world.BlockType
 import org.kraft.world.storage.DiskChunkStorage
 import org.kraft.world.generator.NoiseTerrainGenerator
-import org.kraft.event.BlockChangedEvent
 import org.kraft.world.subscribe
 import java.io.DataInputStream
 import java.io.DataOutputStream
@@ -35,8 +35,6 @@ class GameServer(private val port: Int = 25565) {
     private var running = false
 
     init {
-        // Subscribe to block changes on the world event bus and replicate them to all clients.
-        // This decouples block-change broadcasting from the specific handler that triggered it.
         serverWorld.subscribe<BlockChangedEvent> { event ->
             broadcast(BlockChangePacket(event.x, event.y, event.z, event.newType.id))
         }
@@ -135,15 +133,11 @@ class GameServer(private val port: Int = 25565) {
                     posZ = packet.z
                     yaw = packet.yaw
 
-                    // Dynamically load and stream new chunks as the player moves
                     sendChunksAround(posX, posZ, radius = 2)
 
-                    // Replicate movement to all other clients
                     broadcast(PlayerPositionPacket(playerId, posX, posY, posZ, yaw), excludePlayerId = playerId)
                 }
                 is BlockChangePacket -> {
-                    // Apply to the world — the BlockChangedEvent subscription (in GameServer.init)
-                    // automatically broadcasts the change to all clients.
                     val blockType = BlockType.fromId(packet.typeId)
                     serverWorld.setBlockAt(packet.x, packet.y, packet.z, blockType)
                 }

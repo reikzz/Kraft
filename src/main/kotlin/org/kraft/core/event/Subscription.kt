@@ -1,4 +1,4 @@
-package org.kraft.event
+package org.kraft.core.event
 
 /**
  * Handle representing an active event subscription that can be cancelled to avoid memory leaks.
