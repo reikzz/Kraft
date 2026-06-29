@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "org.kraft"
-version = "0.2.0-SNAPSHOT"
+version = "0.3.0"
 
 application {
     mainClass.set("org.kraft.client.DesktopLauncherKt")
@@ -41,8 +41,4 @@ kotlin {
 
 tasks.test {
     useJUnitPlatform()
-}
-
-tasks.withType<JavaExec> {
-    jvmArgs("--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow")
 }
