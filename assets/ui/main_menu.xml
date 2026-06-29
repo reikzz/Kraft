@@ -1,0 +1,10 @@
+<Table fillParent="true" align="center">
+    <Label text="KRAFT" style="title" pad="20" row="true"/>
+
+    <Label id="lblError" text="" style="default" pad="10" row="true"/>
+
+    <TextButton id="btnPlay" text="Singleplayer" width="200" height="40" pad="10" row="true"/>
+    <TextButton id="btnMultiplayer" text="Multiplayer" width="200" height="40" pad="10" row="true"/>
+    <TextButton id="btnSettings" text="Settings" width="200" height="40" pad="10" row="true"/>
+    <TextButton id="btnExit" text="Exit" width="200" height="40" pad="10" row="true"/>
+</Table>
